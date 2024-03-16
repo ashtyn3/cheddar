@@ -1,0 +1,11 @@
+.{
+    .name = "blg",
+    .version = "0.0.1",
+
+    .dependencies = .{
+        .ziglua = .{
+            .url = "https://github.com/natecraddock/ziglua/archive/2ced05013e7a87fa8546f920b756441840e1aa0b.tar.gz",
+            .hash = "1220d14df5c57d4c3fafe26191fcc3b32c23ffd319e7f5d839d2ace030372f1f85b4",
+        },
+    }
+}

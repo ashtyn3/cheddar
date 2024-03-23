@@ -14,7 +14,6 @@ pub fn CheddarKey(v: []const u8) Value {
     return Value{ .value = .{ .key = v } };
 }
 pub fn CheddarValue(v: anytype) Value {
-    std.log.info("{any}", .{@TypeOf(v)});
     switch (@TypeOf(v)) {
         []const u8 => return Value{ .value = .{ .string = v } },
         u64, comptime_int => return Value{ .value = .{ .int = v } },

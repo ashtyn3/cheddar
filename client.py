@@ -5,5 +5,6 @@ PORT = 8080 # The port used by the server
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.connect((HOST, PORT))
-    data = bytearray([1,9, *bytes("key", "utf-8"), 0, *bytes("value", "utf-8")])
-    s.sendall(data)
+    data = bytes("b\n", "utf-8")
+    while True:
+            s.send(data)

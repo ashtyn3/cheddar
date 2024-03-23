@@ -5,50 +5,72 @@ pub const Header = packed struct {
     size: u64 = 0,
 };
 
-pub const ValueType = enum(u8) { int = 0, float, string, bool, null };
+pub const ValueType = enum(u8) { int = 0, float, string, bool, null, key };
 
+pub fn StringLiteral(v: []const u8) []const u8 {
+    return @as([]const u8, v);
+}
+pub fn CheddarKey(v: []const u8) Value {
+    return Value{ .value = .{ .key = v } };
+}
+pub fn CheddarValue(v: anytype) Value {
+    std.log.info("{any}", .{@TypeOf(v)});
+    switch (@TypeOf(v)) {
+        []const u8 => return Value{ .value = .{ .string = v } },
+        u64, comptime_int => return Value{ .value = .{ .int = v } },
+        f64, comptime_float => return Value{ .value = .{ .float = v } },
+        bool => return Value{ .value = .{ .bool = v } },
+        else => {
+            unreachable;
+        },
+    }
+}
 pub const Value = struct {
-    value: union(ValueType) { int: u64, float: f64, string: []const u8, bool: bool, null: bool } = .{ .null = true },
+    value: union(ValueType) { int: u64, float: f64, string: []const u8, bool: bool, null: bool, key: []const u8 } = .{ .null = true },
 
-    fn serialize_value(self: Value) ![]u8 {
+    pub fn serialize_value(self: Value) ![]u8 {
         switch (self.value) {
             .null => {
                 unreachable;
             },
             .int => {
-                var b: []u8 = try std.heap.page_allocator.dupeZ(u8, std.mem.asBytes(&self.value.int));
+                const b: []u8 = try std.heap.c_allocator.dupeZ(u8, std.mem.asBytes(&self.value.int));
                 return b;
             },
             .float => {
-                var b: []u8 = try std.heap.page_allocator.dupeZ(u8, std.mem.asBytes(&self.value.float));
+                const b: []u8 = try std.heap.c_allocator.dupeZ(u8, std.mem.asBytes(&self.value.float));
                 return b;
             },
             .string => {
-                var b = try std.heap.page_allocator.dupeZ(u8, self.value.string[0..]);
+                const b = try std.heap.c_allocator.dupeZ(u8, self.value.string[0..]);
+                return b;
+            },
+            .key => {
+                const b = try std.heap.c_allocator.dupeZ(u8, self.value.key[0..]);
                 return b;
             },
             .bool => {
-                var b: [1]u8 = .{@as(u8, @intFromBool(self.value.bool))};
-                return b[0..];
+                const b: [1]u8 = .{@as(u8, @intFromBool(self.value.bool))};
+                return try std.heap.c_allocator.dupeZ(u8, b[0..]);
             },
         }
     }
-    fn serialize(self: Value, t: u8) ![]u8 {
-        var data = try self.serialize_value();
-        var head = Header{ .type = t, .size = data.len };
+    pub fn serialize(self: Value, t: u8) ![]u8 {
+        const data = try self.serialize_value();
+        const head = Header{ .type = t, .size = data.len };
         var h: [9]u8 = @bitCast(head);
-        var body = std.ArrayList(u8).init(std.heap.page_allocator);
+        var body = std.ArrayList(u8).init(std.heap.c_allocator);
         try body.appendSlice(&h);
         try body.append('|');
         try body.appendSlice(data);
         return try body.toOwnedSlice();
     }
     pub fn deserialize(head: Header, value: []u8) !*Value {
-        var kind: ValueType = @enumFromInt(head.type);
-        var data: *Value = try std.heap.page_allocator.create(Value);
+        const kind: ValueType = @enumFromInt(head.type);
+        var data: *Value = try std.heap.c_allocator.create(Value);
         switch (kind) {
             .int => {
-                data.value = .{ .int = std.mem.readInt(u64, value[0..8], std.builtin.Endian.Little) };
+                data.value = .{ .int = std.mem.readInt(u64, value[0..8], std.builtin.Endian.little) };
                 return data;
             },
             .float => {
@@ -57,6 +79,10 @@ pub const Value = struct {
             },
             .string => {
                 data.value = .{ .string = value };
+                return data;
+            },
+            .key => {
+                data.value = .{ .key = value };
                 return data;
             },
             .bool => {
@@ -71,11 +97,11 @@ pub const Value = struct {
     }
 
     pub fn deserialize_reader(value: anytype) !*Value {
-        var index = std.ArrayList(u8).init(std.heap.page_allocator);
+        var index = std.ArrayList(u8).init(std.heap.c_allocator);
         _ = try value.reader().streamUntilDelimiter(index.writer(), '|', null);
 
-        var head: *Header = @alignCast(@ptrCast(index.items[0..9]));
-        var data = try std.heap.page_allocator.alloc(u8, head.size);
+        const head: *Header = @alignCast(@ptrCast(index.items[0..9]));
+        const data = try std.heap.c_allocator.alloc(u8, head.size);
         _ = try value.read(data);
         return try Value.deserialize(head.*, data);
     }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const values = @import("./values.zig");
 
-const Column = struct {
+pub const Column = struct {
     index: u16,
     // 0th byte: not null
     // 1st: default
@@ -10,12 +10,14 @@ const Column = struct {
     max_size: ?values.Value = null,
     min_size: ?values.Value = null,
     default: ?values.Value = null,
+    is_primary: bool = false,
     kind: values.ValueType,
     name: values.Value,
     pub fn serialize(self: Column) ![]u8 {
         var options: u24 = 0x000;
-        var col_data = std.ArrayList(u8).init(std.heap.page_allocator);
+        var col_data = std.ArrayList(u8).init(std.heap.c_allocator);
         var idx_val = values.Value{ .value = .{ .int = self.index } };
+        try col_data.append(@intFromBool(self.is_primary));
         try col_data.appendSlice(try idx_val.serialize(0));
         try col_data.append(0);
         try col_data.append(@intFromEnum(self.kind));
@@ -52,22 +54,30 @@ const Column = struct {
         return .{ .index = @as(u16, @truncate(t.cols.items.len)), .kind = kind, .name = values.Value{ .value = .{ .string = name } } };
     }
 };
-const Table = struct {
+pub const Table = struct {
     cols: std.ArrayList(Column),
+    map: std.StringHashMap(usize),
     name: []const u8,
+    keyed: bool,
     pub fn init(name: []const u8) Table {
-        const cols = std.ArrayList(Column).init(std.heap.page_allocator);
+        const cols = std.ArrayList(Column).init(std.heap.c_allocator);
 
         return Table{
             .cols = cols,
             .name = name,
+            .map = std.StringHashMap(usize).init(std.heap.c_allocator),
+            .keyed = false,
         };
     }
     pub fn column(self: *Table, col: Column) !void {
+        try self.map.put(try col.name.serialize_value(), self.cols.items.len);
+        if (col.is_primary) {
+            self.keyed = true;
+        }
         try self.cols.append(col);
     }
     pub fn serialize(self: Table) ![]u8 {
-        var data = std.ArrayList(u8).init(std.heap.page_allocator);
+        var data = std.ArrayList(u8).init(std.heap.c_allocator);
         for (self.cols.items) |col| {
             try data.appendSlice(try col.serialize());
             try data.append('\n');

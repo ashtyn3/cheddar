@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "server",
+        .name = "cheddar",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
         .root_source_file = .{ .path = "src/main.zig" },
@@ -24,29 +24,27 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const network = b.dependency("network", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.linkLibC();
+    exe.root_module.addImport("network", network.module("network"));
+
     // exe.addLibraryPath(.{ .path = "/opt/homebrew/Cellar/rocksdb/8.10.2/lib" });
     exe.addLibraryPath(.{ .path = "/opt/homebrew/lib" });
     exe.addIncludePath(.{ .path = "/opt/homebrew/include" });
     // exe.addIncludePath(.{ .path = "/opt/homebrew/Cellar/rocksdb/8.10.2/include" });
     // exe.addCSourceFile(.{ .file = std.build.LazyPath.relative("./cyber/src/include/cyber.h"), .flags = &.{} });
 
-    exe.linkSystemLibraryName("rocksdb");
+    exe.linkSystemLibrary("rocksdb");
 
     // exe.addIncludePath(.{ .path = "/opt/homebrew/Cellar/lua/5.4.6/include/" });
     // exe.addLibraryPath(.{ .path = "/opt/homebrew/Cellar/lua/5.4.6/lib/" });
 
-    exe.linkLibC();
     // const cyber = b.addModule("cyber", .{ .source_file = .{ .path = "src/libs/cyber/src/cyber.zig" } });
     // exe.addModule("cyber", cyber);
 
-    exe.linkSystemLibraryName("lua");
-    const ziglua = b.dependency("ziglua", .{
-        .target = target,
-        .optimize = optimize,
-        // .lang = .lua54,
-        // .shared = false,
-    });
-    exe.addModule("ziglua", ziglua.module("ziglua"));
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

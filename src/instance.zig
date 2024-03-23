@@ -16,7 +16,8 @@ pub const Cache = struct {
     alloc: std.mem.Allocator,
     map: cache.Cache(Cache_map),
     const Cache_map = struct {
-        id: u64,
+        id: u64 = 0,
+        row: []const u8 = "",
     };
     fn init(a: std.mem.Allocator) !*Cache {
         const s = try a.create(Cache);
@@ -154,7 +155,7 @@ pub fn new_instance(allocator: std.mem.Allocator, addr: []const u8, port: u16) !
     var arena = std.heap.ArenaAllocator.init(allocator);
     const db_alloc = arena.allocator();
 
-    const c = try Cache.init(db_alloc);
+    const c = try Cache.init(allocator);
 
     const loopback = try net.Ip4Address.parse(addr, port);
     const host = net.Address{ .in = loopback };

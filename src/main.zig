@@ -46,4 +46,7 @@ pub fn main() !void {
     // const res = try query.eq(inc, t, "id", values.CheddarKey("aZYgK-0SXReI85S0X6zCzA=="));
     const res = try query.eq(inc, t, "name", values.CheddarValue(values.StringLiteral("bob")));
     print("{s}\n", .{res.get("id").?.value.value.key});
+
+    const res1 = try query.eq(inc, t, "name", values.CheddarValue(values.StringLiteral("bob")));
+    print("{s}\n", .{res1.get("id").?.value.value.key});
 }

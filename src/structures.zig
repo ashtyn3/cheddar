@@ -14,9 +14,9 @@ pub const Column = struct {
     kind: values.ValueType,
     name: values.Value,
     pub fn serialize(self: Column) ![]u8 {
-        var options: u24 = 0x000;
+        var options: u32 = 0x0000;
         var col_data = std.ArrayList(u8).init(std.heap.c_allocator);
-        var idx_val = values.Value{ .value = .{ .int = self.index } };
+        var idx_val = values.Value{ .value = .{ .uint = self.index } };
         try col_data.append(@intFromBool(self.is_primary));
         try col_data.appendSlice(try idx_val.serialize(0));
         try col_data.append(0);
@@ -25,29 +25,57 @@ pub const Column = struct {
         try col_data.appendSlice(try self.name.serialize(@intFromEnum(values.ValueType.string)));
         try col_data.append(0);
         if (self.default) |_| {
-            options |= 0x010;
+            options |= 0x0100;
         }
         if (self.not_null) {
-            options |= 0x100;
+            options |= 0x1000;
         }
         try col_data.append(@as(u8, @truncate(options & 0xf)));
         try col_data.append(@as(u8, @truncate(options & 0x0f)));
-        try col_data.append(@as(u8, @truncate(options & 0x00f)));
 
         if (self.max_size) |ms| {
             options |= 0x001;
-            try col_data.appendSlice(try ms.serialize(@intFromEnum(values.ValueType.int)));
+            try col_data.append(@as(u8, @truncate(options & 0x00f)));
+            try col_data.appendSlice(try ms.serialize(@intFromEnum(values.ValueType.uint)));
             try col_data.append(0);
         }
         if (self.min_size) |ms| {
-            options |= 0x002;
-            try col_data.appendSlice(try ms.serialize(@intFromEnum(values.ValueType.int)));
+            options |= 0x0001;
+            try col_data.append(@as(u8, @truncate(options & 0x000f)));
+            try col_data.appendSlice(try ms.serialize(@intFromEnum(values.ValueType.uint)));
             try col_data.append(0);
         }
         // const len_val = Value{ .value = .{ .int = col_data.items.len } };
         // try col_data.insertSlice(0, try len_val.serialize());
 
         return col_data.items;
+    }
+
+    pub fn deserialize(data: []u8) !Column {
+        const buf = std.io.fixedBufferStream(data);
+        var col = Column{};
+        col.is_primary = @as(bool, try buf.reader().readByte());
+        const temp_idx = try values.Value.deserialize_reader(buf);
+        col.index = @truncate(temp_idx);
+        try buf.reader().skipBytes(1, .{});
+        col.kind = @enumFromInt(try buf.reader().readByte());
+        try buf.reader().skipBytes(1, .{});
+        const temp_name = try values.Value.deserialize_reader(buf);
+        col.name = temp_name.value;
+        try buf.reader().skipBytes(1, .{});
+        col.not_null = (try buf.reader().readByte()) == 1;
+        col.default_byte = (try buf.reader().readByte()) == 1;
+        if ((try buf.reader().readByte()) == 1) {
+            const max_s = try values.Value.deserialize_reader(buf);
+            col.max_size = max_s.value;
+        }
+        buf.reader().skipBytes(1, .{});
+        if ((try buf.reader().readByte()) == 1) {
+            const min_s = try values.Value.deserialize_reader(buf);
+            col.min_size = min_s.value;
+        }
+        buf.reader().skipBytes(1, .{});
+        return col;
     }
 
     pub fn init(t: *Table, name: []const u8, kind: values.ValueType) Column {
@@ -82,6 +110,11 @@ pub const Table = struct {
             try data.appendSlice(try col.serialize());
             try data.append('\n');
         }
+        return try data.toOwnedSlice();
+    }
+
+    pub fn deserialize() Table {
+        var data = std.ArrayList(u8).init(std.heap.c_allocator);
         return try data.toOwnedSlice();
     }
 };

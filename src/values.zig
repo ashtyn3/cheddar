@@ -5,7 +5,7 @@ pub const Header = packed struct {
     size: u64 = 0,
 };
 
-pub const ValueType = enum(u8) { int = 0, float, string, bool, null, key };
+pub const ValueType = enum(u8) { uint = 0, float, string, bool, null, key };
 
 pub fn StringLiteral(v: []const u8) []const u8 {
     return @as([]const u8, v);
@@ -16,7 +16,7 @@ pub fn CheddarKey(v: []const u8) Value {
 pub fn CheddarValue(v: anytype) Value {
     switch (@TypeOf(v)) {
         []const u8 => return Value{ .value = .{ .string = v } },
-        u64, comptime_int => return Value{ .value = .{ .int = v } },
+        u64, comptime_int => return Value{ .value = .{ .uint = v } },
         f64, comptime_float => return Value{ .value = .{ .float = v } },
         bool => return Value{ .value = .{ .bool = v } },
         else => {
@@ -25,15 +25,15 @@ pub fn CheddarValue(v: anytype) Value {
     }
 }
 pub const Value = struct {
-    value: union(ValueType) { int: u64, float: f64, string: []const u8, bool: bool, null: bool, key: []const u8 } = .{ .null = true },
+    value: union(ValueType) { uint: u64, float: f64, string: []const u8, bool: bool, null: bool, key: []const u8 } = .{ .null = true },
 
     pub fn serialize_value(self: Value) ![]u8 {
         switch (self.value) {
             .null => {
                 unreachable;
             },
-            .int => {
-                const b: []u8 = try std.heap.c_allocator.dupeZ(u8, std.mem.asBytes(&self.value.int));
+            .uint => {
+                const b: []u8 = try std.heap.c_allocator.dupeZ(u8, std.mem.asBytes(&self.value.uint));
                 return b;
             },
             .float => {
@@ -68,8 +68,8 @@ pub const Value = struct {
         const kind: ValueType = @enumFromInt(head.type);
         var data: *Value = try std.heap.c_allocator.create(Value);
         switch (kind) {
-            .int => {
-                data.value = .{ .int = std.mem.readInt(u64, value[0..8], std.builtin.Endian.little) };
+            .uint => {
+                data.value = .{ .uint = std.mem.readInt(u64, value[0..8], std.builtin.Endian.little) };
                 return data;
             },
             .float => {

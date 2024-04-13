@@ -24,12 +24,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const network = b.dependency("network", .{
+    const kiesel = b.dependency("mecha", .{
         .target = target,
         .optimize = optimize,
     });
+
+    // ...
+    exe.root_module.addImport("mecha", kiesel.module("mecha"));
+
     exe.linkLibC();
-    exe.root_module.addImport("network", network.module("network"));
 
     // exe.addLibraryPath(.{ .path = "/opt/homebrew/Cellar/rocksdb/8.10.2/lib" });
     exe.addLibraryPath(.{ .path = "/opt/homebrew/lib" });
@@ -38,6 +41,15 @@ pub fn build(b: *std.Build) void {
     // exe.addCSourceFile(.{ .file = std.build.LazyPath.relative("./cyber/src/include/cyber.h"), .flags = &.{} });
 
     exe.linkSystemLibrary("rocksdb");
+    const ziglua = b.dependency("ziglua", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // ... snip ...
+
+    // add the ziglua module and lua artifact
+    exe.root_module.addImport("ziglua", ziglua.module("ziglua"));
 
     // exe.addIncludePath(.{ .path = "/opt/homebrew/Cellar/lua/5.4.6/include/" });
     // exe.addLibraryPath(.{ .path = "/opt/homebrew/Cellar/lua/5.4.6/lib/" });

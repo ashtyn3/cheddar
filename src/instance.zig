@@ -6,46 +6,35 @@ const net = std.net;
 const values = @import("./values.zig");
 const row = @import("./row.zig");
 const structs = @import("./structures.zig");
-const cache = @import("./cache/cache.zig");
 const network = @import("network");
 const print = std.debug.print;
 const log = std.log.scoped(.instance);
 const client = @import("./client.zig");
+const data_cache = @import("./cache.zig");
+const comp = @import("./compactor.zig");
 
-pub const Cache = struct {
-    alloc: std.mem.Allocator,
-    map: cache.Cache(Cache_map),
-    const Cache_map = struct {
-        id: u64 = 0,
-        row: []const u8 = "",
-    };
-    fn init(a: std.mem.Allocator) !*Cache {
-        const s = try a.create(Cache);
-        s.* = .{
-            .alloc = a,
-            .map = try cache.Cache(Cache_map).init(a, .{ .max_size = 10000 }),
-        };
-        return s;
-    }
+pub const InstanceErrors = error{
+    MissingTable,
 };
-
 pub const Instance = struct {
     alloc: std.mem.Allocator,
     db: rdb.RocksDB,
-    server: *std.net.Server,
-    cache: *Cache,
+    server: std.net.Server,
+    cache: *data_cache.Cache,
     addr: net.Address,
+    pool: *std.Thread.Pool,
     pub fn incoming(self: *Instance) !void {
-        var pool = try self.alloc.create(std.Thread.Pool);
-        try std.Thread.Pool.init(pool, .{ .allocator = self.alloc });
+        try self.pool.spawn(comp.compact, .{ self.cache, self.db });
         while (true) {
             var connection = self.server.accept() catch {
-                continue;
+                self.server.deinit();
+                break;
             };
 
-            try pool.spawn(client.handle, .{ &connection, self.alloc });
+            try self.pool.spawn(client.handle, .{ &connection, self.alloc });
         }
-        std.Thread.Pool.waitAndWork();
+        var group = std.Thread.WaitGroup{};
+        self.pool.waitAndWork(&group);
     }
     pub const RowKey = struct { id: []const u8, col: u64, table: []const u8 };
 
@@ -107,13 +96,13 @@ pub const Instance = struct {
             var struct_data = std.io.fixedBufferStream(try raw_column.toOwnedSlice());
             try struct_data.reader().skipBytes(1, .{});
             const index = try values.Value.deserialize_reader(&struct_data);
-            idx = index.value.int;
+            idx = index.value.uint;
             try struct_data.reader().skipBytes(1, .{});
             kind = @enumFromInt(try struct_data.reader().readByte());
             try struct_data.reader().skipBytes(1, .{});
             const name = try values.Value.deserialize_reader(&struct_data);
             if (std.mem.eql(u8, col, name.value.string)) {
-                return index.value.int;
+                return index.value.uint;
             }
         }
         try self.cache.map.put(col, .{ .id = idx }, .{});
@@ -134,6 +123,11 @@ pub const Instance = struct {
 
     pub fn insert_row(self: *Instance, r: row.Row_t) !void {
         var id: []const u8 = try generateId();
+        if (self.cache.map.get(r.table.name)) |ct| {
+            if (ct.value.tombstoned) {
+                return InstanceErrors.MissingTable;
+            }
+        }
         if (r.table.cols.items[0].is_primary) {
             const head = values.Header{ .type = @intFromEnum(r.table.cols.items[0].kind) };
             id = try self.insert_row_seg(r.table.name, 0, head, .{ .value = .{ .key = id } }, id);
@@ -146,6 +140,13 @@ pub const Instance = struct {
         }
     }
 
+    pub fn drop_table(self: *Instance, name: []const u8) !void {
+        // _ = self.db.delete(name);
+        var node = std.DoublyLinkedList(comp.MarkedRange).Node{ .data = .{ .kind = .TAB, .table = name } };
+        self.cache.compaction.prepend(&node);
+        try self.cache.map.put(name, .{ .tombstoned = true }, .{});
+    }
+
     pub fn insert_table(self: *Instance, t: structs.Table) !void {
         _ = self.db.set(t.name, try t.serialize());
     }
@@ -155,12 +156,12 @@ pub fn new_instance(allocator: std.mem.Allocator, addr: []const u8, port: u16) !
     var arena = std.heap.ArenaAllocator.init(allocator);
     const db_alloc = arena.allocator();
 
-    const c = try Cache.init(allocator);
+    const c = try data_cache.Cache.init(allocator);
 
     const loopback = try net.Ip4Address.parse(addr, port);
     const host = net.Address{ .in = loopback };
 
-    var server = try host.listen(.{ .reuse_port = true });
+    const server = try host.listen(.{ .reuse_port = true });
 
     std.fs.cwd().access("db", .{}) catch {
         log.info("Creating db at ./db.", .{});
@@ -169,8 +170,11 @@ pub fn new_instance(allocator: std.mem.Allocator, addr: []const u8, port: u16) !
     log.info("Starting db server.", .{});
     log.info("Address: {s}:{d}", .{ addr, port });
 
+    const pool = try allocator.create(std.Thread.Pool);
+    try std.Thread.Pool.init(pool, .{ .allocator = allocator });
+
     const inst = try allocator.create(Instance);
-    inst.* = .{ .db = rdb.RocksDB.open(db_alloc, "db").val, .alloc = allocator, .addr = host, .server = &server, .cache = c };
+    inst.* = .{ .db = rdb.RocksDB.open(db_alloc, "db").val, .alloc = allocator, .addr = host, .server = server, .cache = c, .pool = pool };
 
     return inst;
 }

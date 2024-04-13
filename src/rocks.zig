@@ -32,7 +32,7 @@ pub const RocksDB = struct {
         rdb.rocksdb_options_set_create_if_missing(options, 1);
         var err: ?[*:0]u8 = null;
         const db = rdb.rocksdb_open(options, dir.ptr, &err);
-        const  r = RocksDB{ .db = db.?, .allocator = allocator };
+        const r = RocksDB{ .db = db.?, .allocator = allocator };
         if (err) |errStr| {
             return .{ .err = std.mem.span(errStr) };
         }
@@ -59,6 +59,16 @@ pub const RocksDB = struct {
             return std.mem.span(errStr);
         }
 
+        return null;
+    }
+
+    pub fn delete(self: RocksDB, key: []const u8) ?[]u8 {
+        const writeOptions = rdb.rocksdb_writeoptions_create();
+        var err: ?[*:0]u8 = null;
+        rdb.rocksdb_delete(self.db, writeOptions, key.ptr, key.len, &err);
+        if (err) |errStr| {
+            return std.mem.span(errStr);
+        }
         return null;
     }
 

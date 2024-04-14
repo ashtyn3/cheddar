@@ -2,6 +2,7 @@ const std = @import("std");
 
 const rdb = @cImport(@cInclude("rocksdb/c.h"));
 
+pub const RequestReturn = enum { val, err, not_found };
 pub const RocksDB = struct {
     db: *rdb.rocksdb_t,
     allocator: std.mem.Allocator,
@@ -72,7 +73,7 @@ pub const RocksDB = struct {
         return null;
     }
 
-    pub fn get(self: RocksDB, key: []const u8) union(enum) { val: []u8, err: []u8, not_found: bool } {
+    pub fn get(self: RocksDB, key: []const u8) union(RequestReturn) { val: []u8, err: []u8, not_found: bool } {
         const readOptions = rdb.rocksdb_readoptions_create();
         var valueLength: usize = 0;
         var err: ?[*:0]u8 = null;

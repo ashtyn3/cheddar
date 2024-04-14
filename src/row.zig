@@ -16,6 +16,9 @@ pub fn Row(table: *structs.Table, comptime cols: anytype) !Row_t {
         if (table.map.get(field.name)) |idx| {
             raw_columns[idx] = values.CheddarValue(value);
             cols_allocated += 1;
+        } else {
+            std.log.err("Cannot add row. Invalid column: {s}", .{field.name});
+            return structs.DBErrors.InvalidColumn;
         }
     }
     if (expected != cols_allocated) {

@@ -39,7 +39,7 @@ pub fn main() !void {
     const col3 = structs.Column.init(&t, "name", values.ValueType.string);
     try t.column(col3);
 
-    const r = try row.Row(&t, .{ .name = values.StringLiteral("ashtyn"), .age = 2 });
+    const r = try row.Row(&t, .{ .hi = values.StringLiteral("ashtyn"), .age = 2 });
     // const r2 = try row.Row(&t, .{ .name = values.StringLiteral("bob"), .age = 20 });
     // print("{any}", .{r});
     // try inc.insert_table(t);

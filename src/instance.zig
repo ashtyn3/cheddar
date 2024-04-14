@@ -15,6 +15,7 @@ const comp = @import("./compactor.zig");
 
 pub const InstanceErrors = error{
     MissingTable,
+    MissingColumn,
 };
 pub const Instance = struct {
     alloc: std.mem.Allocator,
@@ -81,6 +82,19 @@ pub const Instance = struct {
         return RowSegment{ .head = header.*, .value = v.*, .key = .{ .id = id, .col = col, .table = table } };
     }
     fn column_idx_map(self: *Instance, table: []const u8, col: []const u8) !u64 {
+        if (self.cache.map.get(table)) |ct| {
+            if (ct.value.tombstoned) {
+                return InstanceErrors.MissingTable;
+            }
+        } else {
+            switch (self.db.get(table)) {
+                .not_found => {
+                    return InstanceErrors.MissingTable;
+                },
+                else => {},
+            }
+        }
+
         if (self.cache.map.get(col)) |c| {
             return c.value.id;
         }
@@ -102,11 +116,12 @@ pub const Instance = struct {
             try struct_data.reader().skipBytes(1, .{});
             const name = try values.Value.deserialize_reader(&struct_data);
             if (std.mem.eql(u8, col, name.value.string)) {
+                try self.cache.map.put(col, .{ .id = idx }, .{});
                 return index.value.uint;
             }
         }
-        try self.cache.map.put(col, .{ .id = idx }, .{});
-        return std.math.maxInt(u64);
+        // try self.cache.map.put(col, .{ .id = idx }, .{});
+        return InstanceErrors.MissingColumn;
     }
 
     pub fn get_column(self: *Instance, table: []const u8, col: []const u8) ![]RowSegment {
@@ -127,6 +142,13 @@ pub const Instance = struct {
             if (ct.value.tombstoned) {
                 return InstanceErrors.MissingTable;
             }
+        } else {
+            switch (self.db.get(r.table.name)) {
+                .not_found => {
+                    return InstanceErrors.MissingTable;
+                },
+                else => {},
+            }
         }
         if (r.table.cols.items[0].is_primary) {
             const head = values.Header{ .type = @intFromEnum(r.table.cols.items[0].kind) };
@@ -141,7 +163,6 @@ pub const Instance = struct {
     }
 
     pub fn drop_table(self: *Instance, name: []const u8) !void {
-        // _ = self.db.delete(name);
         var node = std.DoublyLinkedList(comp.MarkedRange).Node{ .data = .{ .kind = .TAB, .table = name } };
         self.cache.compaction.prepend(&node);
         try self.cache.map.put(name, .{ .tombstoned = true }, .{});

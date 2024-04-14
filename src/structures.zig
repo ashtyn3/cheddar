@@ -1,6 +1,9 @@
 const std = @import("std");
 const values = @import("./values.zig");
 
+pub const DBErrors = error{
+    InvalidColumn,
+};
 pub const Column = struct {
     index: u16,
     // 0th byte: not null

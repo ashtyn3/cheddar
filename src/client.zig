@@ -1,4 +1,5 @@
-const network = @import("network");
+const runtime = @import("./query/runtime.zig");
+const instance = @import("./instance.zig");
 const std = @import("std");
 const log = std.log.scoped(.net);
 
@@ -6,7 +7,7 @@ pub const Client = struct {
     conn: *std.net.Server.Connection,
     alloc: std.mem.Allocator,
 };
-pub fn handle(conn: *std.net.Server.Connection, alloc: std.mem.Allocator) void {
+pub fn handle(conn: *std.net.Server.Connection, alloc: std.mem.Allocator, inst: *instance.Instance) void {
     var self = alloc.create(Client) catch {
         return;
     };
@@ -19,7 +20,8 @@ pub fn handle(conn: *std.net.Server.Connection, alloc: std.mem.Allocator) void {
             return;
         };
         if (buffer.items.len != 0) {
-            log.debug("{s}", .{buffer.items});
+            log.info("got request.\n{s}", .{buffer.items});
+            runtime.eval(alloc, inst, @ptrCast(buffer.items)) catch {};
         }
     }
 }

@@ -32,10 +32,10 @@ pub const Instance = struct {
                 break;
             };
 
-            try self.pool.spawn(client.handle, .{ &connection, self.alloc });
+            try self.pool.spawn(client.handle, .{ &connection, self.alloc, self });
         }
-        var group = std.Thread.WaitGroup{};
-        self.pool.waitAndWork(&group);
+        // var group = std.Thread.WaitGroup{};
+        // self.pool.waitAndWork(&group);
     }
     pub const RowKey = struct { id: []const u8, col: u64, table: []const u8 };
 
@@ -81,7 +81,26 @@ pub const Instance = struct {
         const id = key_reader.next().?;
         return RowSegment{ .head = header.*, .value = v.*, .key = .{ .id = id, .col = col, .table = table } };
     }
-    fn column_idx_map(self: *Instance, table: []const u8, col: []const u8) !u64 {
+
+    pub fn get_table_seg(self: *Instance, name: []const u8) !structs.Table {
+        const raw = self.db.get(name);
+        switch (raw) {
+            .val => {
+                return structs.Table.deserialize(name, raw.val) catch |err| {
+                    std.log.info("bad table: {}", .{err});
+                    return InstanceErrors.MissingTable;
+                };
+            },
+            .not_found => {
+                return InstanceErrors.MissingTable;
+            },
+            else => {
+                unreachable;
+            },
+        }
+    }
+
+    pub fn column_idx_map(self: *Instance, table: []const u8, col: []const u8) !u64 {
         if (self.cache.map.get(table)) |ct| {
             if (ct.value.tombstoned) {
                 return InstanceErrors.MissingTable;
@@ -100,24 +119,15 @@ pub const Instance = struct {
         }
         const data = self.db.get(table);
         var buf = std.io.fixedBufferStream(data.val);
-        var kind: values.ValueType = values.ValueType.null;
-        var idx: u64 = 0;
         while (true) {
             var raw_column = std.ArrayList(u8).init(std.heap.c_allocator);
             buf.reader().streamUntilDelimiter(raw_column.writer(), '\n', null) catch {
                 break;
             };
-            var struct_data = std.io.fixedBufferStream(try raw_column.toOwnedSlice());
-            try struct_data.reader().skipBytes(1, .{});
-            const index = try values.Value.deserialize_reader(&struct_data);
-            idx = index.value.uint;
-            try struct_data.reader().skipBytes(1, .{});
-            kind = @enumFromInt(try struct_data.reader().readByte());
-            try struct_data.reader().skipBytes(1, .{});
-            const name = try values.Value.deserialize_reader(&struct_data);
-            if (std.mem.eql(u8, col, name.value.string)) {
-                try self.cache.map.put(col, .{ .id = idx }, .{});
-                return index.value.uint;
+            const col_data = try structs.Column.deserialize(try raw_column.toOwnedSlice());
+            if (std.mem.eql(u8, col, col_data.name.value.string)) {
+                try self.cache.map.put(col, .{ .id = col_data.index }, .{});
+                return col_data.index;
             }
         }
         // try self.cache.map.put(col, .{ .id = idx }, .{});
@@ -169,11 +179,16 @@ pub const Instance = struct {
     }
 
     pub fn insert_table(self: *Instance, t: structs.Table) !void {
+        log.info("creating table: {s}", .{t.name});
         _ = self.db.set(t.name, try t.serialize());
     }
 };
 
 pub fn new_instance(allocator: std.mem.Allocator, addr: []const u8, port: u16) !*Instance {
+    _ = std.fs.cwd().openDir("db", .{}) catch {
+        const path = try std.fs.cwd().realpathAlloc(allocator, ".");
+        log.info("Creating db at: {s}/db", .{path});
+    };
     var arena = std.heap.ArenaAllocator.init(allocator);
     const db_alloc = arena.allocator();
 
@@ -183,10 +198,6 @@ pub fn new_instance(allocator: std.mem.Allocator, addr: []const u8, port: u16) !
     const host = net.Address{ .in = loopback };
 
     const server = try host.listen(.{ .reuse_port = true });
-
-    std.fs.cwd().access("db", .{}) catch {
-        log.info("Creating db at ./db.", .{});
-    };
 
     log.info("Starting db server.", .{});
     log.info("Address: {s}:{d}", .{ addr, port });

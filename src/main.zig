@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const instance = @import("./instance.zig");
 const structs = @import("./structures.zig");
 const values = @import("./values.zig");
@@ -20,8 +21,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var inc = try instance.new_instance(allocator, "127.0.0.1", 8080);
-    // try inc.drop_table("how");
-    // try inc.incoming();
+    try inc.incoming();
 
     var iter = inc.db.iter("").val;
     while (iter.next()) |line| {
@@ -39,11 +39,11 @@ pub fn main() !void {
     const col3 = structs.Column.init(&t, "name", values.ValueType.string);
     try t.column(col3);
 
-    const r = try row.Row(&t, .{ .hi = values.StringLiteral("ashtyn"), .age = 2 });
+    // const r = try row.Row(&t, .{ .hi = values.StringLiteral("ashtyn"), .age = 2 });
     // const r2 = try row.Row(&t, .{ .name = values.StringLiteral("bob"), .age = 20 });
     // print("{any}", .{r});
     // try inc.insert_table(t);
-    try inc.insert_row(r);
+    // try inc.insert_row(r);
     // try inc.insert_row(r2);
     //
     // const res = try inc.get_column("how", "id");
